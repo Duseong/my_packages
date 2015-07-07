@@ -1,0 +1,18 @@
+'''
+chk.py
+check variable
+
+MODIFICATION HISTORY:
+    dsj, 16, MAY, 2015: VERSION 1.00
+'''
+
+import numpy as np
+
+def chk(X):
+
+    print 'type =', type(X)
+    print 'len =', len(X)
+    print 'shape =', np.shape(X)
+    print 'max =', np.max(X)
+    print 'min =', np.min(X)
+    print 'mean =', np.mean(X)

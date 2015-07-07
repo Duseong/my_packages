@@ -1,0 +1,254 @@
+'''
+map.py
+this code is designed for 2d map plotting
+
+MODIFICATION HISTORY:
+    dsj, 15, MAY, 2015: VERSION 1.00
+    dsj, 19, MAY, 2015: VERSION 1.10
+                       - update settings for auto-colorbar
+    dsj, 30, MAY, 2015: VERSOIN 1.20
+                       - add several options
+    dsj, 09, JUN, 2015: VERSION 1.30
+                       - add overlay plot function
+'''
+
+import numpy as np
+from mpl_toolkits.basemap import Basemap
+import matplotlib.pyplot as plt
+import matplotlib.cm as cm
+import pdb
+
+
+class Tvmap(object):
+    '''
+    NAME:
+           Tvmap
+
+    PURPOSE:
+           plotting 2D map image
+
+    INPUTS:
+           data -> 2-D array of values to be plotted as a color map
+                   The first dimension is latitude, the second is longitude
+           lons -> longitude values
+           lats -> latitude values
+           fill_lon_edge -> fill data values for lon=180.
+                            It is needed only for the global plot case
+           noparallel -> suppress latitude line
+           nomeridian -> suppress longitude line
+           nocoast -> suppress coastal line
+           nogxlabel -> No longitude labels
+           nogylabel -> No latitude labels
+           ticksize -> longitude & latitude tick label size
+           unit -> unit
+           maxdata -> maxdata for plotting
+           mindata -> mindata for plotting
+           colorlabels -> tick labels in colorbar
+           colorticks -> tick points in colorbar
+           ltext = text in left upper side of the figure
+           rtext = text in right upper side of the figure
+           diff = Flag for the difference map
+           basemapkwds = keyword-value pair dictionary for basemap
+           cibtiyrfkwds = keyword-value pair dictionary for contourf
+           colorbarkwds = keyword-value pair dictionary for colorbar
+    '''
+
+    def __init__(self, data, lons=0, lats=0, fill_lon_edge=True,
+                 noparallel=False,nomeridian=False,nocoast=False,
+                 nogylabel=False, nogxlabel=False,
+                 ticksize=12, unit='', unitsize=17,
+                 cbsize=0, division=21, Nticks=11,
+                 maxdata='None', mindata='None', colorlabels=0,
+                 colorticks=0, ltext='', rtext='', diff=False, 
+                 basemapkwds={}, contourfkwds={}, colorbarkwds={} ):
+
+        self.imx = np.shape(data)[1]
+        self.jmx = np.shape(data)[0]
+        self.max = np.max(data)
+        self.min = np.min(data)
+        self.mean = np.mean(data)
+
+        # Error check for data dimension
+        if np.ndim(data) != 2:
+            raise ValueError( 'data must be a 2-D array' )
+        else:
+            self.data = data
+
+        # Construct lons & lats when lons & lats are not explicitly passed
+        if np.ndim(lons) == 0:
+            lons = np.linspace(-180,180,self.imx+1)[0:self.imx]
+        if np.ndim(lats) == 0:
+            lats = np.linspace(-90,90,self.jmx)
+
+        # Error check for lons & lats
+        # lons must have the same # of elements as the 1st dim of data
+        if np.shape(data)[1] != np.shape(lons)[0]:
+            raise ValueError( "'lons' is not compatible with 'data'!" )
+        elif np.ndim(lons) != 1:
+            raise ValueError( "'lons' must be a 1-D vector!" )
+        else:
+            self.lons = lons
+            
+        # lats must have the same # of elements as the 2st dim of data
+        if np.shape(data)[0] != np.shape(lats)[0]:
+            raise ValueError( "'lats' is not compatible with 'data'!" )
+        elif np.ndim(lats) != 1:
+            raise ValueError( "'lats' must be a 1-D vector!" )        
+        else:
+            self.lats = lats
+
+        # Fill longitude edge
+        if fill_lon_edge: self.lonedge()
+        
+        # Call Basemap 
+        m = Basemap(**basemapkwds)
+        
+        # longitude & latitude setting
+        lon,lat = np.meshgrid( self.lons, self.lats )
+        x, y = m(lon, lat)
+
+        # Map settings
+        if not nocoast: m.drawcoastlines()
+
+        if nogylabel:
+            gylabel = [0,0,0,0]
+        else:
+            gylabel = [1,0,0,0]
+
+        if nogxlabel:
+            gxlabel = [0,0,0,0]
+        else:
+            gxlabel = [0,0,0,1]
+
+        if not noparallel: m.drawparallels(np.arange(-90.,91.,30.),
+                                           labels=gylabel, size=ticksize,
+                                           weight='semibold')
+        if not nomeridian: m.drawmeridians(np.arange(-120.,181.,60.),
+                                           labels=gxlabel, size=ticksize,
+                                           weight='semibold')
+
+        # Set max and min value of colorbar
+        maxorder = np.floor( np.log10(np.abs(self.max)) ).astype(int)
+        if maxdata == 'None':
+            if maxorder < 0:
+                maxdata = np.around( self.max, decimals=maxorder+1 )
+            else:
+                maxdata = np.around( self.max )
+
+        if mindata == 'None':
+            if maxorder < 0:
+                mindata = np.around( self.min, decimals=maxorder+1 )
+            else:
+                mindata = np.around( self.min )        
+
+        if diff:
+            if abs(maxdata) > abs(mindata):
+                mindata = -maxdata
+            elif abs(maxdata) < abs(mindata):
+                maxdata = -mindata
+
+
+        self.cmax = maxdata
+        self.cmin = mindata
+
+        
+        # Contour settings
+        if not 'levels' in contourfkwds:
+            contourfkwds['levels'] = np.linspace(mindata,maxdata,division)
+        if not 'extend' in contourfkwds:
+            contourfkwds['extend'] = 'both'
+
+
+
+        cf = m.contourf( x, y, self.data, **contourfkwds)
+ 
+        # Colorbar settings
+        if cbsize == 0: cbsize = ticksize
+
+        if not 'orientation' in colorbarkwds:
+            colorbarkwds['orientation'] = 'horizontal'
+        if not 'pad' in colorbarkwds:
+            colorbarkwds['pad'] = 0.10
+
+        colorbarkwds['fraction'] = 0.05
+
+        maxorder = np.floor( np.log10(np.abs(maxdata)) ).astype(int)    
+        if np.ndim(colorlabels) == 0:
+            if maxorder < 0:
+                colorlabels = np.around( np.linspace(mindata,maxdata,Nticks),
+                                         decimals=maxorder+2 )
+            else:
+                colorlabels = np.around( np.linspace(mindata,maxdata,Nticks) )
+
+        if np.ndim(colorticks) == 0:
+            if maxorder < 0:
+                colorticks = np.around( np.linspace(mindata,maxdata,Nticks),
+                                         decimals=maxorder+2 )
+            else:
+                colorticks = np.around( np.linspace(mindata,maxdata,Nticks) )
+
+
+        pc = plt.colorbar(**colorbarkwds)
+        # pc.set_label(unit,size=cbsize)
+
+        
+        pc.set_ticks(colorticks)
+        pc.ax.set_xticklabels( colorlabels,
+                               size=cbsize, style='italic', weight='semibold' )
+        pc.update_ticks
+
+
+        self.colorticks = colorticks
+        self.colorlabels = colorlabels
+
+
+        #texts
+        plt.text( -180, 90, ltext, ha='left', va='bottom' )
+        plt.text( 180, 90, rtext, ha='right', va='bottom',
+                  weight='semibold', style='italic' )
+        plt.text( 1.01, 1.0, unit, ha='left', va='top',
+                  weight='semibold', style='italic',
+                  transform=pc.ax.transAxes,
+                  size=unitsize )
+
+        
+        # Clear dictionaries
+        contourfkwds.clear()
+        colorbarkwds.clear()
+        basemapkwds.clear()
+
+
+        # save colorbar properties
+        self.tcolors = cf.tcolors
+        self.boundaries = pc.boundaries
+
+    def lonedge(self):
+
+        self.data = np.concatenate( ( self.data,
+                                      np.swapaxes([self.data[:,-1]],0,1) ),
+                                      axis=1 )
+        self.lons = np.linspace(-180,180,self.imx+1)
+
+
+
+    def overlay(self, Obsdata, Obslons, Obslats, plotkwds={}):
+
+        cvalues = self.tcolors
+        boundaries = self.boundaries
+        
+        Indices = []
+        for d in Obsdata:
+            Indices.append( np.max( np.where( d > boundaries ) ) )
+
+
+        # Keyword settings
+        if not 'marker' in plotkwds:
+            plotkwds['marker'] = 'o'
+        if not 'markersize' in plotkwds:
+            plotkwds['markersize'] = 12
+
+
+        for i, Ind in enumerate(Indices):
+            plt.plot( Obslons[i],Obslats[i],color=cvalues[Ind][0][0:3],
+                      **plotkwds )
+            
