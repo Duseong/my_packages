@@ -8,6 +8,8 @@ MODIFICATION HISTORY:
                        - update settings for auto-colorbar
     dsj, 30, MAY, 2015: VERSOIN 1.20
                        - add several options
+    dsj, 09, JUN, 2015: VERSION 1.30
+                       - add overlay plot function
 '''
 
 import numpy as np
@@ -54,7 +56,8 @@ class Tvmap(object):
     def __init__(self, data, lons=0, lats=0, fill_lon_edge=True,
                  noparallel=False,nomeridian=False,nocoast=False,
                  nogylabel=False, nogxlabel=False,
-                 ticksize=12, unit='', cbsize=0, division=21, Nticks=11,
+                 ticksize=12, unit='', unitsize=17,
+                 cbsize=0, division=21, Nticks=11,
                  maxdata='None', mindata='None', colorlabels=0,
                  colorticks=0, ltext='', rtext='', diff=False, 
                  basemapkwds={}, contourfkwds={}, colorbarkwds={} ):
@@ -205,7 +208,8 @@ class Tvmap(object):
                   weight='semibold', style='italic' )
         plt.text( 1.01, 1.0, unit, ha='left', va='top',
                   weight='semibold', style='italic',
-                  transform=pc.ax.transAxes)
+                  transform=pc.ax.transAxes,
+                  size=unitsize )
 
         
         # Clear dictionaries
