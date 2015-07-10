@@ -6,6 +6,8 @@ MODIFICATION HISTORY:
     dsj, 16, MAY, 2015: VERSION 1.00
     dsj, 28, MAY, 2015: VERSION 1.10
                       - use try-except and add additional information
+    dsj, 10, JUL, 2015: VERSION 1.20
+                      - Improve capability for array with nan values
 '''
 
 import numpy as np
@@ -28,17 +30,17 @@ def chk(X):
         print 'no shape'
         
     try:
-        print 'max =', np.max(X)
+        print 'max =', np.nanmax(X)
     except:
         print 'no max'
         
     try:
-        print 'min =', np.min(X)
+        print 'min =', np.nanmin(X)
     except:
         print 'no min'
         
     try:
-        print 'mean =', np.mean(X)
+        print 'mean =', np.nanmean(X)
     except:
         print 'no mean'
 
