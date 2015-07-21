@@ -1,3 +1,4 @@
+
 '''
 bpchread.py
 this code is designed for GEOS-Chem bpch file
@@ -6,6 +7,12 @@ MODIFICATION HISTORY:
     dsj, 29, APR, 2015: VERSION 1.00
     dsj, 19, JUN, 2015: VERSION 1.10
                         - update for considering ts output
+    dsj, 10, JUL, 2015: VERSION 1.20
+                        - add seasonal mean function
+    dsj, 15, JUL, 2015: VERSION 1.30
+                        - add sum_tracers function
+    dsj, 21, JUL, 2015: VERSION 1.40
+                        - add calc_burden function
 '''
 
 from bpch import bpch
@@ -32,8 +39,10 @@ class Bpch2(object):
         self.info = {}
         
 
-    def read_bpch(self,elucidate=False,saveinfo=True, ugm=False,
-                  ugmdiag='BXHGHT-$', ugmtracer='N(AIR)'):
+    def read_bpch(self,elucidate=False,saveinfo=True,
+                  ugm=False, ugmdiag='BXHGHT-$', ugmtracer='N(AIR)',
+                  burden=False, burdendiag='BXHGHT-$',
+                  burdentracer='BXHEIGHT', maxL=47):
 
         for f in np.arange(len(self.files)):
             if elucidate: print 'read file:', self.files[f]
@@ -73,8 +82,6 @@ class Bpch2(object):
                     self.info['taum'] = np.append( self.info['taum'],
                                                    group.variables['time'] )
 
-                
-
             if ugm:
                 groupN = bcfile.groups[ugmdiag]
                 varN = groupN.variables[ugmtracer]
@@ -84,8 +91,24 @@ class Bpch2(object):
                                       np.shape(np.squeeze(var))  )
                 Nair[f,:] = np.squeeze(varN)
 
+
+            if burden:
+                groupN = bcfile.groups[burdendiag]
+                varN = groupN.variables[burdentracer]
+
+                if f == 0:
+                    BXHGHT =  np.zeros( (len(self.files),) + \
+                                      np.shape(np.squeeze(var))  )
+                BXHGHT[f,:] = np.squeeze(varN)
+
         if ugm:
             self.convert_mol_kg(Nair)
+
+        # burden calculation should be after ugm
+        if burden and not ugm:
+            raise ValueError( 'burden calculation should turn on ugm' )
+        if burden:
+            self.calc_burden(BXHGHT,maxL=maxL)
 
             
     def convert_mol_kg(self,Nair):
@@ -97,9 +120,97 @@ class Bpch2(object):
             self.unit[self.tracers[i]] = 'ug/m3'
 
 
-    #def timeseries(self,elucidate=False,saveinfo=True,ugm=False,
-    #               ugmdiag='BXHGHT-$', ugmtracer='N(AIR)'):
-    #
-    #    for f in np.arange(len(self.files)):
+    def seasonal_mean(self):
+
+        self.MAM = {}
+        self.JJA = {}
+        self.SON = {}
+        self.DJF = {}
+        MAMcount = {}
+        JJAcount = {}
+        SONcount = {}
+        DJFcount = {}
+        
+        
+        for i in range( len( self.data[self.tracers[0]][:,0,0,0] ) ):
+            YMD = Tau( self.info['tau0'][i], 2 )
+
             
-    
+            for key in self.data.keys():
+
+                if YMD.month == 3 or YMD.month == 4 or YMD.month == 5:
+
+                    if key in self.MAM:
+                        self.MAM[key] += self.data[key][i,:,:,:]
+                        MAMcount[key] += 1
+                        
+                    else:
+                        self.MAM[key] = self.data[key][i,:,:,:]
+                        MAMcount[key] = 1
+
+                elif YMD.month == 6 or YMD.month == 7 or YMD.month == 8:
+
+                    if key in self.JJA:
+                        self.JJA[key] += self.data[key][i,:,:,:]
+                        JJAcount[key] += 1
+                        
+                    else:
+                        self.JJA[key] = self.data[key][i,:,:,:]
+                        JJAcount[key] = 1
+
+                elif YMD.month == 9 or YMD.month == 10 or YMD.month == 11:
+
+                    if key in self.SON:
+                        self.SON[key] += self.data[key][i,:,:,:]
+                        SONcount[key] += 1
+                        
+                    else:
+                        self.SON[key] = self.data[key][i,:,:,:]
+                        SONcount[key] = 1
+
+                elif YMD.month == 12 or YMD.month == 1 or YMD.month == 2:
+
+                    if key in self.DJF:
+                        self.DJF[key] += self.data[key][i,:,:,:]
+                        DJFcount[key] += 1
+                        
+                    else:
+                        self.DJF[key] = self.data[key][i,:,:,:]
+                        DJFcount[key] = 1
+
+        for key in self.data.keys():
+
+            self.MAM[key] = self.MAM[key] / MAMcount[key]
+            self.JJA[key] = self.JJA[key] / JJAcount[key]
+            self.SON[key] = self.SON[key] / SONcount[key]
+            self.DJF[key] = self.DJF[key] / DJFcount[key]
+
+    def sum_tracers(self):
+
+        for i, key in enumerate( self.data.keys() ):
+
+            if i == 0:
+                self.datatotal = self.data[key]
+            else:
+                self.datatotal += self.data[key]
+
+    def calc_burden(self,BXHGHT,maxL=47):
+
+        self.burden = {}
+        self.info['volume'] = np.zeros( np.shape( BXHGHT ) )
+
+
+        for f in np.arange(len(self.files)):
+            for l in np.arange( maxL ):
+                self.info['volume'][f,l,:,:] = \
+                      BXHGHT[f,l,:,:] * self.info['area']
+
+        for key in self.data.keys():
+            self.burden[key] = \
+                    np.sum( self.data[key] * self.info['volume'] ) / 1e15
+
+
+        
+
+
+
