@@ -11,6 +11,8 @@ MODIFICATION HISTORY:
                         - add seasonal mean function
     dsj, 15, JUL, 2015: VERSION 1.30
                         - add sum_tracers function
+    dsj, 21, JUL, 2015: VERSION 1.40
+                        - add calc_burden function
 '''
 
 from bpch import bpch
@@ -40,7 +42,7 @@ class Bpch2(object):
     def read_bpch(self,elucidate=False,saveinfo=True,
                   ugm=False, ugmdiag='BXHGHT-$', ugmtracer='N(AIR)',
                   burden=False, burdendiag='BXHGHT-$',
-                  burdentracer='BXHEIGHT'):
+                  burdentracer='BXHEIGHT', maxL=47):
 
         for f in np.arange(len(self.files)):
             if elucidate: print 'read file:', self.files[f]
@@ -102,8 +104,11 @@ class Bpch2(object):
         if ugm:
             self.convert_mol_kg(Nair)
 
+        # burden calculation should be after ugm
+        if burden and not ugm:
+            raise ValueError( 'burden calculation should turn on ugm' )
         if burden:
-            self.calc_burden(BXHGHT)
+            self.calc_burden(BXHGHT,maxL=maxL)
 
             
     def convert_mol_kg(self,Nair):
@@ -189,6 +194,26 @@ class Bpch2(object):
             else:
                 self.datatotal += self.data[key]
 
-    def calc_burden(self,BXHGHT,L=47):
+    def calc_burden(self,BXHGHT,maxL=47):
+
+        self.burden = {}
+        self.info['volume'] = np.zeros( np.shape( BXHGHT ) )
+
+
+        for f in np.arange(len(self.files)):
+            for l in np.arange( maxL ):
+                self.info['volume'][f,l,:,:] = \
+                      BXHGHT[f,l,:,:] * self.info['area']
+
+        for key in self.data.keys():
+            # 1E15 -> ug to Gg
+            self.burden[key] = \
+                    np.sum( self.data[key] * self.info['volume'] ) \
+                    / 1e15 / len( self.info['tau0'] )
+        self.burden['All'] = sum( self.burden.values() )
+
+
         
-        
+
+
+

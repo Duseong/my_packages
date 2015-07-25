@@ -206,8 +206,11 @@ class Bpch2(object):
                       BXHGHT[f,l,:,:] * self.info['area']
 
         for key in self.data.keys():
+            # 1E15 -> ug to Gg
             self.burden[key] = \
-                    np.sum( self.data[key] * self.info['volume'] ) / 1e15
+                    np.sum( self.data[key] * self.info['volume'] ) \
+                    / 1e15 / len( self.info['tau0'] )
+
 
 
         
