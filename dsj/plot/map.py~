@@ -10,6 +10,8 @@ MODIFICATION HISTORY:
                        - add several options
     dsj, 09, JUN, 2015: VERSION 1.30
                        - add overlay plot function
+    dsj, 08, JUL, 2015: VERSION 1.40
+                       - bug fix for maxorder value & add unitoffset
 '''
 
 import numpy as np
@@ -41,6 +43,7 @@ class Tvmap(object):
            nogylabel -> No latitude labels
            ticksize -> longitude & latitude tick label size
            unit -> unit
+           unitoffset -> adjust unit position
            maxdata -> maxdata for plotting
            mindata -> mindata for plotting
            colorlabels -> tick labels in colorbar
@@ -56,7 +59,7 @@ class Tvmap(object):
     def __init__(self, data, lons=0, lats=0, fill_lon_edge=True,
                  noparallel=False,nomeridian=False,nocoast=False,
                  nogylabel=False, nogxlabel=False,
-                 ticksize=12, unit='', unitsize=17,
+                 ticksize=12, unit='', unitsize=17, unitoffset=[0.,0.],
                  cbsize=0, division=21, Nticks=11,
                  maxdata='None', mindata='None', colorlabels=0,
                  colorticks=0, ltext='', rtext='', diff=False, 
@@ -128,16 +131,19 @@ class Tvmap(object):
                                            weight='semibold')
 
         # Set max and min value of colorbar
-        maxorder = np.floor( np.log10(np.abs(self.max)) ).astype(int)
+        if self.max ==0:
+            maxorder = 0
+        else:
+            maxorder = np.floor( np.log10(np.abs(self.max)) ).astype(int)
         if maxdata == 'None':
             if maxorder < 0:
-                maxdata = np.around( self.max, decimals=maxorder+1 )
+                maxdata = np.around( self.max, decimals=-maxorder )
             else:
                 maxdata = np.around( self.max )
 
         if mindata == 'None':
             if maxorder < 0:
-                mindata = np.around( self.min, decimals=maxorder+1 )
+                mindata = np.around( self.min, decimals=-maxorder )
             else:
                 mindata = np.around( self.min )        
 
@@ -172,18 +178,22 @@ class Tvmap(object):
 
         colorbarkwds['fraction'] = 0.05
 
-        maxorder = np.floor( np.log10(np.abs(maxdata)) ).astype(int)    
+        if maxdata == 0:
+            maxorder = 0
+        else:
+            maxorder = np.floor( np.log10(np.abs(maxdata)) ).astype(int)
+        
         if np.ndim(colorlabels) == 0:
             if maxorder < 0:
                 colorlabels = np.around( np.linspace(mindata,maxdata,Nticks),
-                                         decimals=maxorder+2 )
+                                         decimals=-maxorder )
             else:
                 colorlabels = np.around( np.linspace(mindata,maxdata,Nticks) )
 
         if np.ndim(colorticks) == 0:
             if maxorder < 0:
                 colorticks = np.around( np.linspace(mindata,maxdata,Nticks),
-                                         decimals=maxorder+2 )
+                                         decimals=-maxorder )
             else:
                 colorticks = np.around( np.linspace(mindata,maxdata,Nticks) )
 
@@ -206,7 +216,8 @@ class Tvmap(object):
         plt.text( -180, 90, ltext, ha='left', va='bottom' )
         plt.text( 180, 90, rtext, ha='right', va='bottom',
                   weight='semibold', style='italic' )
-        plt.text( 1.01, 1.0, unit, ha='left', va='top',
+        plt.text( 1.01+unitoffset[0], 1.0+unitoffset[1], unit,
+                  ha='left', va='top',
                   weight='semibold', style='italic',
                   transform=pc.ax.transAxes,
                   size=unitsize )

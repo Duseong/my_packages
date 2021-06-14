@@ -30,7 +30,8 @@ class Cbar(object):
 
         
         CBT = np.genfromtxt( dir_path + '/cbar/' + self.name + '.rgb' ) / 255.
-        CBT2 = map( matcl.rgb2hex, CBT )
+        CBT2 = list(map( matcl.rgb2hex, CBT ))
         self.cmap = matcl.ListedColormap(CBT2, self.name )
+
 
 
