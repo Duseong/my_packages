@@ -4,6 +4,8 @@ To read an icartt (ict) format file
 
 MODIFICATION HISTORY:
     Duseong Jo, 02, JUL, 2021: VERSION 1.00
+    Duseong Jo, 06, JUL, 2021: VERSION 2.00
+    - Now can read multiple files at once
 '''
 
 from collections import OrderedDict
@@ -26,10 +28,15 @@ class Read_ict(object):
     '''
 
     def __init__( self, filename ):
-        
+                       
         self.filename = filename
         
-        ict_fid = open( self.filename, 'r' )
+        
+        if type(filename) == str:
+            ict_fid = open( self.filename, 'r' )
+        else:
+            ict_fid = open( self.filename[0], 'r' )
+        
         
         # First line
         First_line = ict_fid.readline().rstrip("\n")
@@ -37,6 +44,9 @@ class Read_ict(object):
         
         # header information
         self.header = OrderedDict()
+        if type(filename) != str:
+            self.header['Number_of_Files'] = len( self.filename )
+        
         self.header['PI_Name'] = ict_fid.readline().rstrip("\n") 
         self.header['PI_Affiliation'] = ict_fid.readline().rstrip("\n") 
         self.header['Data_Source_Description'] = ict_fid.readline().rstrip("\n")
@@ -106,11 +116,34 @@ class Read_ict(object):
         
         ict_fid.close()
         
-             
-        self.data = np.genfromtxt( self.filename, delimiter=',', dtype=None, skip_header=self.header_lines, names=True )
+        
+        if type(filename) == str:
+            self.data = np.genfromtxt( self.filename, delimiter=',', dtype=None, deletechars='',
+                                       skip_header=self.header_lines, names=True )
+        else:
+            TMPdict = OrderedDict()
+            TMPdict_type = {}
+
+            
+            for i, filen in enumerate(self.filename):
+                tmpdata = np.genfromtxt( filen, delimiter=',', dtype=None, deletechars='',
+                                         skip_header=self.header_lines, names=True )
+                
+                if i == 0:
+                    for name in tmpdata.dtype.names:
+                        TMPdict[name] = tmpdata[name]
+                        TMPdict_type[name] = tmpdata[name].dtype  
+                else:
+                    for name in tmpdata.dtype.names:
+                        TMPdict[name] = np.concatenate( (TMPdict[name], tmpdata[name] ) )
+            
+            self.data = TMPdict
+            
         
         
     def __call__(self):
+        if 'Number_of_Files' in self.header.keys():
+            print( 'Number of Files: ' + str(self.header['Number_of_Files']) )
         print( 'PI Name: ' + self.header['PI_Name'] )
         print( 'PI Affiliation: ' + self.header['PI_Affiliation'] )
         print( 'Data Source Description: ' + self.header['Data_Source_Description'] )
