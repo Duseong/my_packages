@@ -10,6 +10,8 @@ MODIFICATION HISTORY:
     - Add custom options for regional history files
     Duseong Jo, 24, JUN, 2021: VERSION 1.20
     - Add a custom option to constrain levels
+    Duseong Jo, 24, JUN, 2021: VERSION 1.30
+    - Consider a case for 1-d array with only 'time' dimension
 '''
 
 ### Module import ###
@@ -83,7 +85,15 @@ class Convert_aerosol_ugm3(object):
         str_ps_index = '['
         str_t_index = '['
         for di, dim in enumerate(dimension):
-            if dim == 'time':
+            if dim == dimension[-1]:
+                str_pressure_index += ':]'
+                if len(dimension) == 1:
+                    str_hym_index += '0]'
+                else:
+                    str_hym_index += ']'
+                str_ps_index += ':]'
+                str_t_index += ':]'
+            elif dim == 'time':
                 str_pressure_index += 'ti,'
                 str_ps_index += 'ti,'
                 str_hym_index += '0,'
@@ -92,11 +102,6 @@ class Convert_aerosol_ugm3(object):
                 str_pressure_index += 'kii,'
                 str_hym_index += 'ki'
                 str_t_index += self.levels + ','
-            elif dim == dimension[-1]:
-                str_pressure_index += ':]'
-                str_hym_index += ']'
-                str_ps_index += ':]'
-                str_t_index += ':]'
             else:
                 str_pressure_index += ':,'
                 str_ps_index += ':,'
