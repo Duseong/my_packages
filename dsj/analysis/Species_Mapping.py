@@ -27,6 +27,8 @@ MODIFICATION HISTORY:
     - Add an additional attribute for the mapping equation
     Duseong Jo, 22, APR, 2021: VERSION 2.90
     - Add an additional keyword for custom date option
+    Duseong Jo, 19, JUL, 2021: VERSION 3.00
+    - Consider a case that some species has missing source categories when lumping
 '''
 
 ### Module import ###
@@ -235,8 +237,11 @@ class sp_map(object):
                                          '\nif those are not available in NetCDF file attributes')
 
                     if type( self.mw_Inventory[sp_src] ) == str:
-                        self.mw_Inventory[sp_src] = np.copy( self.mw_Inventory[sp_src].replace('.f'),'' ).astype('f')
-                    elif type( self.mw_Inventory[sp_src] ) in [int, float, np.float32]:
+                        try:
+                            self.mw_Inventory[sp_src] = np.copy( self.mw_Inventory[sp_src].replace('.f'),'' ).astype('f')
+                        except:
+                            self.mw_Inventory[sp_src] = np.copy( self.mw_Inventory[sp_src] ).astype('f')
+                    elif type( self.mw_Inventory[sp_src] ) in [int, float, np.float32, np.float64]:
                         self.mw_Inventory[sp_src] = np.copy( self.mw_Inventory[sp_src] ).astype('f')
                     else:
                         raise ValueError( 'Check molecular weight variable in NetCDF file!')
@@ -418,19 +423,27 @@ class sp_map(object):
                         # Calculation first
                         calc_str = 'self.var_value = '
                         for ii, sp_src in enumerate(self.eq_species[sp_cesm]):
-                            self.convert_unit(sp_cesm, sp_src)
-                            calc_str += 'self.eq_frac["' + sp_cesm + '"][' + str(ii) + \
-                                        '] * self.conversion_factor["' + sp_cesm + '"]["' + \
-                                        sp_src + '"]'                         
-                            calc_str += '* self.ds_source["' + sp_src + '"]["' + sc + '"].values '
-                            if (self.N_equations[sp_cesm] > 1) & (ii + 1 < self.N_equations[sp_cesm]):
-                                calc_str += self.eq_operators[sp_cesm][ii]
+                            # to consider missing sectors in some species
+                            if sc in list( self.ds_source[sp_src].data_vars ):
+                                sp_src_type = sp_src
+                                self.convert_unit(sp_cesm, sp_src)
+                                calc_str += 'self.eq_frac["' + sp_cesm + '"][' + str(ii) + \
+                                            '] * self.conversion_factor["' + sp_cesm + '"]["' + \
+                                            sp_src + '"]'                         
+                                calc_str += '* self.ds_source["' + sp_src + '"]["' + sc + '"].values '
+                                if (self.N_equations[sp_cesm] > 1) & (ii + 1 < self.N_equations[sp_cesm]):
+                                    calc_str += self.eq_operators[sp_cesm][ii]
+                                
+                        
+                        if calc_str[-1] == '+':
+                            calc_str = calc_str[:-1]
+                        
                         exec(calc_str)
 
                         # Create Variable in NetCDF
                         var = fid.createVariable( sc,
-                                                  np.dtype( self.ds_source[sp_src][sc].values.flat[0] ).name,
-                                                  self.ds_source[sp_src][sc].dims )                
+                                                  np.dtype( self.ds_source[sp_src_type][sc].values.flat[0] ).name,
+                                                  self.ds_source[sp_src_type][sc].dims )                
                         var[:] = self.var_value
                         var.standard_name = sp_cesm
                         var.long_name = 'Emissions of ' + sp_cesm + ' for ' + sc + ' sector'
@@ -441,12 +454,12 @@ class sp_map(object):
                         var.molecular_weight = self.mw_CESM[sp_cesm]
                         var.molecular_weight_units = 'g mole-1'
 
-                        for key in list( self.ds_source[sp_src][sc].attrs.keys() ):
+                        for key in list( self.ds_source[sp_src_type][sc].attrs.keys() ):
                             if key in ['standard_name', 'long_name', 'units',
                                        'molecular_weight', 'molecular_weight_units']:
                                 continue
                             else:
-                                var.setncattr( key, self.ds_source[sp_src][sc].attrs[key] )
+                                var.setncattr( key, self.ds_source[sp_src_type][sc].attrs[key] )
 
                 else:
                     # Calculation first
@@ -455,24 +468,31 @@ class sp_map(object):
                     for sc in self.sectors[sp_cesm]:
 
                         for ii, sp_src in enumerate(self.eq_species[sp_cesm]):
-                            self.convert_unit(sp_cesm, sp_src)
-                            calc_str += 'self.eq_frac["' + sp_cesm + '"][' + str(ii) + \
-                                        '] * self.conversion_factor["' + sp_cesm + '"]["' + \
-                                        sp_src + '"]'                         
-                            calc_str += '* self.ds_source["' + sp_src + '"]["' + sc + '"].values '
-                            if (self.N_equations[sp_cesm] > 1) & (ii + 1 < self.N_equations[sp_cesm]):
-                                calc_str += self.eq_operators[sp_cesm][ii]
+                            # to consider missing sectors in some species
+                            if sc in list( self.ds_source[sp_src].data_vars ):
+                                sp_src_type = sp_src
+                                self.convert_unit(sp_cesm, sp_src)
+                                calc_str += 'self.eq_frac["' + sp_cesm + '"][' + str(ii) + \
+                                            '] * self.conversion_factor["' + sp_cesm + '"]["' + \
+                                            sp_src + '"]'                         
+                                calc_str += '* self.ds_source["' + sp_src + '"]["' + sc + '"].values '
+                                if (self.N_equations[sp_cesm] > 1) & (ii + 1 < self.N_equations[sp_cesm]):
+                                    calc_str += self.eq_operators[sp_cesm][ii]
 
                         str_sector += sc
                         if not sc == self.sectors[sp_cesm][-1]:
                             calc_str += ' + '
                             str_sector += ' + '
+
+                        # to consider missing sectors in some species
+                        if calc_str[-2] == '+':
+                            calc_str = calc_str[:-2]
                     exec(calc_str)
 
                     # Create Variable in NetCDF
                     var = fid.createVariable( 'emiss',
-                                              np.dtype( self.ds_source[sp_src][sc].values.flat[0] ).name,
-                                              self.ds_source[sp_src][sc].dims )                
+                                              np.dtype( self.ds_source[sp_src_type][sc].values.flat[0] ).name,
+                                              self.ds_source[sp_src_type][sc].dims )                
                     var[:] = self.var_value
                     var.standard_name = sp_cesm
                     var.long_name = 'Emissions of ' + sp_cesm
@@ -492,6 +512,7 @@ class sp_map(object):
                         # Calculation first for 2d dimension
                         calc_str = 'self.var_value_2d = '
                         for ii, sp_src in enumerate(self.eq_species[sp_cesm]):
+                            
                             self.convert_unit(sp_cesm, sp_src)
                             calc_str += 'self.eq_frac["' + sp_cesm + '"][' + str(ii) + \
                                         '] * self.conversion_factor["' + sp_cesm + '"]["' + \
