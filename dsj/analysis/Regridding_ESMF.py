@@ -46,6 +46,8 @@ MODIFICATION HISTORY:
     - Adding an error diagnostic when reading molecular weights
     Duseong Jo, 06, MAY, 2021: VERSION 6.42
     - In case the dimension of the xarray variable is not explicitly defined
+    Duseong Jo, 24, SEP, 2021: VERSION 7.00
+    - Adding a scale factor keyword 
 '''
 
 ### Module import ###
@@ -244,6 +246,7 @@ class Regridding(object):
                           can be useful especially for emission processing
            mw: in case check_results=True. To calculate global emission total
            unit: in case check_results=True. To calculate global emission total
+           scale_factor: custom scale factor for output
            check_timings: if true, measure time spent for regridding
            ignore_warning: if true, ignore warning messages
            verbose: display detailed information on what is being done
@@ -253,8 +256,8 @@ class Regridding(object):
                  src_grid_file=None, dst_grid_file=None, wgt_file=None, save_wgt_file=False,
                  save_wgt_file_only=False, method="Conserve", save_results=True, speed_up=True,
                  datatype='f4',nc_file_format='NETCDF3_64BIT_DATA', dst_file=None, 
-                 creation_date=True, check_results=False, mw=None, unit=None, check_timings=True, 
-                 ignore_warning=False, verbose=False):
+                 creation_date=True, check_results=False, mw=None, unit=None, scale_factor=1,
+                 check_timings=True, ignore_warning=False, verbose=False):
         # =========================================================================
         # ===== Check errors and Pass input values to class-accessible values =====
         # =========================================================================
@@ -500,6 +503,7 @@ class Regridding(object):
         self.creation_date       = creation_date
         self.check_results       = check_results
         self.check_timings       = check_timings
+        self.scale_factor        = scale_factor
         self.ignore_warning      = ignore_warning
         self.verbose             = verbose
         # === END Check errors and Pass input values to class-accessible values ===
@@ -999,7 +1003,7 @@ class Regridding(object):
                 # Add regridded fields to NetCDF file
                 if self.fields == []:
                     var_tmp = fid.createVariable( 'regridded_field', self.datatype, self.dst_dim )
-                    var_tmp[:] = self.var_dst
+                    var_tmp[:] = self.var_dst * self.scale_factor
                     if self.xarray_flag:
                         for key in list( self.var_array.attrs.keys() ):
                             if key in ['molecular_weight', 'molecular_weights']:
@@ -1017,7 +1021,7 @@ class Regridding(object):
                 else:
                     for fld in self.fields:
                         var_tmp = fid.createVariable( fld, self.datatype, self.dst_dim )
-                        var_tmp[:] = self.var_dst[fld]
+                        var_tmp[:] = self.var_dst[fld] * self.scale_factor
                         if self.xarray_flag:
                             for key in list( self.var_array[fld].attrs.keys() ):
                                 if key in ['molecular_weight', 'molecular_weights']:
@@ -1303,7 +1307,7 @@ class Regridding(object):
                 
                 # NetCDF
                 var_tmp = fid.createVariable( 'regridded_field', self.datatype, self.dst_dim )
-                var_tmp[:] = self.var_dst
+                var_tmp[:] = self.var_dst * self.scale_factor
                 if self.xarray_flag:
                     for key in list( self.var_array.attrs.keys() ):
                         if key in ['molecular_weight', 'molecular_weights']:
@@ -1424,7 +1428,7 @@ class Regridding(object):
                         raise ValueError( 'Check number of dimensions in the destination field' )                
                     # NetCDF
                     var_tmp = fid.createVariable( fld, self.datatype, self.dst_dim )
-                    var_tmp[:] = self.var_dst
+                    var_tmp[:] = self.var_dst * self.scale_factor
                     if self.xarray_flag:
                         for key in list( self.var_array[fld].attrs.keys() ):
                             if key in ['molecular_weight', 'molecular_weights']:

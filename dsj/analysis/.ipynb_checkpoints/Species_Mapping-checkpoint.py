@@ -29,6 +29,10 @@ MODIFICATION HISTORY:
     - Add an additional keyword for custom date option
     Duseong Jo, 19, JUL, 2021: VERSION 3.00
     - Consider a case that some species has missing source categories when lumping
+    Duseong Jo, 24, SEP, 2021: VERSION 3.10
+    - Add an additional unit to deal with HTAPv3 emissions (ton/month)
+    Duseong Jo, 24, SEP, 2021: VERSION 4.00
+    - Add an additional keyword to add date_array variable manually
 '''
 
 ### Module import ###
@@ -58,6 +62,7 @@ class sp_map(object):
            keep_sector: if True, the script will keep the sectors
                         if False, the script will sum up all the sectors and make it one total
            read_file_only: if True, the script will read mapping file without calculation
+           date_array: in case of adding date array manually
            day_of_each_month: if provided (integer), use it for day of each month, 
                                overwrite the day of month in the original file
            ignore_warning: if True, ignore warning messages
@@ -65,13 +70,14 @@ class sp_map(object):
     '''
     
     def __init__(self, mapping_file, nc_file_format='NETCDF3_64BIT_DATA', print_user_nl_cam=True, 
-                 keep_sector=True, read_file_only=False, day_of_each_month=None,
+                 keep_sector=True, read_file_only=False, date_array=None, day_of_each_month=None, 
                  ignore_warning=False, verbose=False):
         
         self.mapping_file = mapping_file
         self.nc_file_format = nc_file_format
         self.print_user_nl_cam = print_user_nl_cam
         self.keep_sector = keep_sector
+        self.date_array = date_array
         self.day_of_each_month = day_of_each_month
         self.ignore_warning = ignore_warning
         self.verbose = verbose
@@ -83,8 +89,8 @@ class sp_map(object):
         
         if self.print_user_nl_cam:
             self.ext_frc_specifier = "ext_frc_specifier = "
-            self.srf_emis_specifier = "srf_emis_specifier = "
-        
+            self.srf_emis_specifier = "srf_emis_specifier = "          
+            
         # Read species mapping file
         self.read_mapping_file()
         
@@ -203,6 +209,7 @@ class sp_map(object):
         else:
             self.species_to_process = self.species_list
 
+        First_read = True
         for sp_cesm in self.species_to_process:
             if self.verbose:
                 print( 'Processing: ', sp_cesm, datetime.datetime.now() )
@@ -214,6 +221,23 @@ class sp_map(object):
                                                               decode_times=False)
                     self.ds_source_time[sp_src] = xr.open_dataset( self.Source_files[sp_src] )
 
+                    # Check whether the grid is FV or SE
+                    if First_read:
+                        self.dim_var = {}
+                        if 'ncol' in list( self.ds_source[sp_src].dims ): 
+                            self.grid_type = 'SE'
+                            self.dim_var['grid_area_rad2'] = self.ds_source[sp_src]['grid_area_rad2'].values
+                        elif 'lat' in list( self.ds_source[sp_src].dims ):
+                            self.grid_type = 'FV'
+                            self.dim_var['lat'] = self.ds_source[sp_src]['lat'].values
+                            self.dim_var['lon'] = self.ds_source[sp_src]['lon'].values
+                        else:
+                            raise ValueError( 'Check source dimensions!' )                    
+                        First_read = False
+                        
+
+                        
+                    
                 if sp_src == self.eq_species[sp_cesm][0]:
                     self.nc_dims[sp_cesm] = list( self.ds_source[sp_src].dims )
 
@@ -378,40 +402,52 @@ class sp_map(object):
             # add date variable if not available | or 
             if ('date' not in self.vars_source) | (self.day_of_each_month != None):
                 # Retrieve time info
-                if type( self.ds_source_time[sp_src]['time'].values[0] ) == np.datetime64:
-                    self.time_year = self.ds_source_time[sp_src]['time'].values.astype('datetime64[Y]').astype('int') + 1970
-                    self.time_month = self.ds_source_time[sp_src]['time'].values.astype('datetime64[M]').astype('int') % 12 + 1
-                    self.time_day = ( self.ds_source_time[sp_src]['time'].values.astype('datetime64[D]') - \
-                                      self.ds_source_time[sp_src]['time'].values.astype('datetime64[M]') + 1 ).astype('int')
+                if self.date_array == None:
+                    if type( self.ds_source_time[sp_src]['time'].values[0] ) == np.datetime64:
+                        self.time_year = self.ds_source_time[sp_src]['time'].values.astype('datetime64[Y]').astype('int') + 1970
+                        self.time_month = self.ds_source_time[sp_src]['time'].values.astype('datetime64[M]').astype('int') % 12 + 1
+                        self.time_day = ( self.ds_source_time[sp_src]['time'].values.astype('datetime64[D]') - \
+                                          self.ds_source_time[sp_src]['time'].values.astype('datetime64[M]') + 1 ).astype('int')
 
-                elif type( self.ds_source_time[sp_src]['time'].values[0] ) in [cftime._cftime.DatetimeGregorian, 
-                                                                               cftime._cftime.DatetimeNoLeap]:
+                    elif type( self.ds_source_time[sp_src]['time'].values[0] ) in [cftime._cftime.DatetimeGregorian, 
+                                                                                   cftime._cftime.DatetimeNoLeap]:
+                        self.time_year = np.zeros( len(self.ds_source_time[sp_src]['time']) ).astype('int')
+                        self.time_month = np.zeros( len(self.ds_source_time[sp_src]['time']) ).astype('int')
+                        self.time_day = np.zeros( len(self.ds_source_time[sp_src]['time']) ).astype('int')
+
+                        for ti, timeraw in enumerate( self.ds_source_time[sp_src]['time'].values ):
+                            self.time_year[ti] = timeraw.year
+                            self.time_month[ti] = timeraw.month
+                            self.time_day[ti] = timeraw.day
+
+                    else:
+                        raise ValueError( 'Currently ' + str(type( self.ds_source_time[sp_src]['time'].values[0] )) \
+                                        + ' is not supported! Check type of the time dimension' )
+            
+                    # Construct Date
+                    self.date_array = []
+                    for ti, ty in enumerate( self.time_year ):
+                        if self.day_of_each_month == None:
+                            self.date_array.append( self.time_year[ti]*10000 + self.time_month[ti]*100 + self.time_day[ti] )
+                        else:
+                            self.date_array.append( self.time_year[ti]*10000 + self.time_month[ti]*100 + self.day_of_each_month )
+
+                else:
                     self.time_year = np.zeros( len(self.ds_source_time[sp_src]['time']) ).astype('int')
                     self.time_month = np.zeros( len(self.ds_source_time[sp_src]['time']) ).astype('int')
                     self.time_day = np.zeros( len(self.ds_source_time[sp_src]['time']) ).astype('int')
 
-                    for ti, timeraw in enumerate( self.ds_source_time[sp_src]['time'].values ):
-                        self.time_year[ti] = timeraw.year
-                        self.time_month[ti] = timeraw.month
-                        self.time_day[ti] = timeraw.day
-
-                else:
-                    raise ValueError( 'Currently ' + str(type( self.ds_source_time[sp_src]['time'].values[0] )) \
-                                    + ' is not supported! Check type of the time dimension' )
-            
-                # Construct Date
-                self.date_array = []
-                for ti, ty in enumerate( self.time_year ):
-                    if self.day_of_each_month == None:
-                        self.date_array.append( self.time_year[ti]*10000 + self.time_month[ti]*100 + self.time_day[ti] )
-                    else:
-                        self.date_array.append( self.time_year[ti]*10000 + self.time_month[ti]*100 + self.day_of_each_month )
-                
+                    for dateii, dateval in enumerate(self.date_array):
+                        self.time_year[dateii] = int( int(dateval) / 10000 )
+                        self.time_month[dateii] = int( (int(dateval) - self.time_year[dateii] * 10000) / 100 )
+                        self.time_day[dateii] = int(dateval) - self.time_year[dateii] * 10000 - self.time_month[dateii] * 100
+                    
                 # Add date variable to NetCDF file
                 var = fid.createVariable( 'date', 'int32', ('time',) )
                 var[:] = self.date_array
                 var.units = 'YYYYMMDD'
                 var.long_name = 'Date'
+
 
 
             # Calculation - Remappaing
@@ -426,7 +462,7 @@ class sp_map(object):
                             # to consider missing sectors in some species
                             if sc in list( self.ds_source[sp_src].data_vars ):
                                 sp_src_type = sp_src
-                                self.convert_unit(sp_cesm, sp_src)
+                                self.convert_unit(sp_cesm, sp_src, sc)
                                 calc_str += 'self.eq_frac["' + sp_cesm + '"][' + str(ii) + \
                                             '] * self.conversion_factor["' + sp_cesm + '"]["' + \
                                             sp_src + '"]'                         
@@ -471,7 +507,7 @@ class sp_map(object):
                             # to consider missing sectors in some species
                             if sc in list( self.ds_source[sp_src].data_vars ):
                                 sp_src_type = sp_src
-                                self.convert_unit(sp_cesm, sp_src)
+                                self.convert_unit(sp_cesm, sp_src, sc)
                                 calc_str += 'self.eq_frac["' + sp_cesm + '"][' + str(ii) + \
                                             '] * self.conversion_factor["' + sp_cesm + '"]["' + \
                                             sp_src + '"]'                         
@@ -513,7 +549,7 @@ class sp_map(object):
                         calc_str = 'self.var_value_2d = '
                         for ii, sp_src in enumerate(self.eq_species[sp_cesm]):
                             
-                            self.convert_unit(sp_cesm, sp_src)
+                            self.convert_unit(sp_cesm, sp_src, sc)
                             calc_str += 'self.eq_frac["' + sp_cesm + '"][' + str(ii) + \
                                         '] * self.conversion_factor["' + sp_cesm + '"]["' + \
                                         sp_src + '"]'                         
@@ -587,7 +623,7 @@ class sp_map(object):
                     for sc in self.sectors[sp_cesm]:
 
                         for ii, sp_src in enumerate(self.eq_species[sp_cesm]):
-                            self.convert_unit(sp_cesm, sp_src)
+                            self.convert_unit(sp_cesm, sp_src, sc)
                             calc_str += 'self.eq_frac["' + sp_cesm + '"][' + str(ii) + \
                                         '] * self.conversion_factor["' + sp_cesm + '"]["' + \
                                         sp_src + '"]'                         
@@ -666,7 +702,7 @@ class sp_map(object):
                         # Iteration vertically
                         calc_str = 'self.var_value = '
                         for ii, sp_src in enumerate(self.eq_species[sp_cesm]):
-                            self.convert_unit(sp_cesm, sp_src)
+                            self.convert_unit(sp_cesm, sp_src, sc)
                             calc_str += 'self.eq_frac["' + sp_cesm + '"][' + str(ii) + \
                                         '] * self.conversion_factor["' + sp_cesm + '"]["' + \
                                         sp_src + '"]'                         
@@ -748,7 +784,7 @@ class sp_map(object):
                     for sc in self.sectors[sp_cesm]:
                         
                         for ii, sp_src in enumerate(self.eq_species[sp_cesm]):
-                            self.convert_unit(sp_cesm, sp_src)
+                            self.convert_unit(sp_cesm, sp_src, sc)
                             calc_str += 'self.eq_frac["' + sp_cesm + '"][' + str(ii) + \
                                         '] * self.conversion_factor["' + sp_cesm + '"]["' + \
                                         sp_src + '"]'                         
@@ -882,7 +918,7 @@ class sp_map(object):
 
 
     # convert units
-    def convert_unit(self, sp_cesm, sp_src):
+    def convert_unit(self, sp_cesm, sp_src, sc):
         Avo = 6.022e23 # molecules / mole
         
         if sp_cesm not in self.conversion_factor.keys():
@@ -891,7 +927,6 @@ class sp_map(object):
         
         conv_success = False
         if self.Source_unit in ['kg m-2 s-1', 'kg/m2/s']:
-            
             if sp_cesm in self.diameter.keys():
                 conv_success = True
                 # kg particle-1
@@ -911,12 +946,89 @@ class sp_map(object):
                     if self.yield_type[sp_cesm] == 'mass':
                         self.conversion_factor[sp_cesm][sp_src] *= self.mw_Inventory[sp_src] / \
                                                                    self.mw_CESM[sp_cesm]
+                        
+        elif self.Source_unit in ['ton/month', 'ton month-1']:
+            self.calc_area()
+            self.conversion_factor[sp_cesm][sp_src] = np.zeros( self.ds_source[sp_src][sc].shape ) + 1
+            
+            if sp_cesm in self.diameter.keys():
+                conv_success = True
+                # kg particle-1
+                self.mass_per_particle[sp_cesm] = self.density[sp_cesm] * (np.pi/6.) * \
+                                                  self.diameter[sp_cesm]**(3)
                 
+                # unit: (particles/cm2/s)(molecules/mole)(g/kg)
+                # MAM4 in CESM/CAM-chem has some weird unit for number
+                for ti in np.arange( len( self.ds_source[sp_src]['time'] ) ):
+                    DOM = calendar.monthrange( self.time_year[ti], self.time_month[ti] )[1]
+                    self.conversion_factor[sp_cesm][sp_src][ti] *= Avo * 1e3 * 1e-4 / \
+                                                               self.mass_per_particle[sp_cesm] \
+                                                              * self.mw_CESM[sp_cesm] \
+                                                              / self.mw_Inventory[sp_src] \
+                                                              * 1000  / self.grid_area / ( DOM * 86400. )
+                
+            else:
+                if self.Destination_unit in ['molecules cm-2 s-1', 'molecules/cm2/s']:
+                    conv_success = True
+                    
+                    for ti in np.arange( len( self.ds_source[sp_src]['time'] ) ):
+                        DOM = calendar.monthrange( self.time_year[ti], self.time_month[ti] )[1]
+                        self.conversion_factor[sp_cesm][sp_src][ti] *= \
+                                                     Avo / (self.mw_Inventory[sp_src] / 1e3) / 1e4 \
+                                                     * 1000 / self.grid_area / (DOM * 86400.)
+                    if self.yield_type[sp_cesm] == 'mass':
+                        self.conversion_factor[sp_cesm][sp_src][ti] *= self.mw_Inventory[sp_src] / \
+                                                                       self.mw_CESM[sp_cesm]
+
+
         if not conv_success:
             raise ValueError( 'The unit conversion from ', self.Source_unit, 
                               'to ', self.Destination_unit, ' is currently not supported')
-            
+
+    # calculate grid area
+    def calc_area(self):
         
+        Earth_rad = 6.371e6 # in m
+        
+        if self.grid_type == 'FV':
+            if 'lat' not in self.dim_var.keys():
+                raise ValueError( 'Check your dimension variables! ' + \
+                                  'Latitude (lat) values are not available' )
+            if 'lon' not in self.dim_var.keys():
+                raise ValueError( 'Check your dimension variables! ' + \
+                                  'Longitude (lon) values are not available' )              
+            
+            self.grid_area = np.zeros( ( len(self.dim_var['lat']), 
+                                         len(self.dim_var['lon']) ) )
+            
+            for jj in np.arange( len(self.dim_var['lat']) ):
+                if (jj == 0) & ( (self.dim_var['lat'][jj] + 90.) < 0.001 ):
+                    self.dlat = self.dim_var['lat'][jj+1] - self.dim_var['lat'][jj]
+                    self.dlon = self.dim_var['lon'][jj+1] - self.dim_var['lon'][jj]
+                    sedge = ( self.dim_var['lat'][jj] ) * np.pi / 180.
+                    nedge = ( self.dim_var['lat'][jj] + self.dlat / 2. ) * np.pi / 180.
+                elif (jj == len(self.dim_var['lat'])-1) & ( (self.dim_var['lat'][jj] - 90.) < 0.001 ):
+                    self.dlat = self.dim_var['lat'][jj] - self.dim_var['lat'][jj-1]
+                    self.dlon = self.dim_var['lon'][jj] - self.dim_var['lon'][jj-1]
+                    sedge = ( self.dim_var['lat'][jj] - self.dlat / 2. ) * np.pi / 180.
+                    nedge = ( self.dim_var['lat'][jj] ) * np.pi / 180.
+                else:
+                    self.dlat = self.dim_var['lat'][jj+1] - self.dim_var['lat'][jj]
+                    self.dlon = self.dim_var['lon'][jj+1] - self.dim_var['lon'][jj]                    
+                    sedge = ( self.dim_var['lat'][jj] - self.dlat / 2. ) * np.pi / 180.
+                    nedge = ( self.dim_var['lat'][jj] + self.dlat / 2. ) * np.pi / 180.
+                    
+                    
+                self.grid_area[jj,:] = self.dlon * (np.pi/180.) * Earth_rad**(2) \
+                                       * ( np.sin(nedge) - np.sin(sedge) )
+            
+        elif self.grid_type == 'SE':
+            
+            Earth_area = 4 * np.pi * Earth_rad**(2)
+        
+            self.grid_area = self.dim_var['grid_area_rad2'] / np.sum( self.dim_var['grid_area_rad2'] ) \
+                            * Earth_area
+            
     
     # ===== Defining __call__ method =====
     def __call__(self):

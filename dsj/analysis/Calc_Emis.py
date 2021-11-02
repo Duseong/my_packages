@@ -333,18 +333,32 @@ class Calc_Emis_T(object):
             if 'lon' not in self.dim_var.keys():
                 raise ValueError( 'Check your dimension variables! ' + \
                                   'Longitude (lon) values are not available' )              
-            
+                       
             self.grid_area = np.zeros( ( len(self.dim_var['lat']), 
                                          len(self.dim_var['lon']) ) )
-            self.dlat = self.dim_var['lat'][1] - self.dim_var['lat'][0]
-            self.dlon = self.dim_var['lon'][1] - self.dim_var['lon'][0]
             
             for jj in np.arange( len(self.dim_var['lat']) ):
-                sedge = ( self.dim_var['lat'][jj] - self.dlat / 2. ) * np.pi / 180.
-                nedge = ( self.dim_var['lat'][jj] + self.dlat / 2. ) * np.pi / 180.
+                if (jj == 0) & ( (self.dim_var['lat'][jj] + 90.) < 0.001 ):
+                    self.dlat = self.dim_var['lat'][jj+1] - self.dim_var['lat'][jj]
+                    self.dlon = self.dim_var['lon'][jj+1] - self.dim_var['lon'][jj]
+                    sedge = ( self.dim_var['lat'][jj] ) * np.pi / 180.
+                    nedge = ( self.dim_var['lat'][jj] + self.dlat / 2. ) * np.pi / 180.
+                elif (jj == len(self.dim_var['lat'])-1) & ( (self.dim_var['lat'][jj] - 90.) < 0.001 ):
+                    self.dlat = self.dim_var['lat'][jj] - self.dim_var['lat'][jj-1]
+                    self.dlon = self.dim_var['lon'][jj] - self.dim_var['lon'][jj-1]
+                    sedge = ( self.dim_var['lat'][jj] - self.dlat / 2. ) * np.pi / 180.
+                    nedge = ( self.dim_var['lat'][jj] ) * np.pi / 180.
+                else:
+                    self.dlat = self.dim_var['lat'][jj+1] - self.dim_var['lat'][jj]
+                    self.dlon = self.dim_var['lon'][jj+1] - self.dim_var['lon'][jj]                    
+                    sedge = ( self.dim_var['lat'][jj] - self.dlat / 2. ) * np.pi / 180.
+                    nedge = ( self.dim_var['lat'][jj] + self.dlat / 2. ) * np.pi / 180.
+                    
+                    
                 self.grid_area[jj,:] = self.dlon * (np.pi/180.) * Earth_rad**(2) \
                                        * ( np.sin(nedge) - np.sin(sedge) )
             
+                
         elif self.grid_type == 'SE':
             
             Earth_area = 4 * np.pi * Earth_rad**(2)
