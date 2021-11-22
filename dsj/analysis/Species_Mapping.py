@@ -33,6 +33,8 @@ MODIFICATION HISTORY:
     - Add an additional unit to deal with HTAPv3 emissions (ton/month)
     Duseong Jo, 24, SEP, 2021: VERSION 4.00
     - Add an additional keyword to add date_array variable manually
+    Duseong Jo, 22, NOV, 2021: VERSION 4.10
+    - Add if statements to check different grid area variables
 '''
 
 ### Module import ###
@@ -226,7 +228,20 @@ class sp_map(object):
                         self.dim_var = {}
                         if 'ncol' in list( self.ds_source[sp_src].dims ): 
                             self.grid_type = 'SE'
-                            self.dim_var['grid_area_rad2'] = self.ds_source[sp_src]['grid_area_rad2'].values
+                            if 'grid_area_rad2' in list( self.ds_source[sp_src].variables ):
+                                self.dim_var['grid_area_rad2'] = self.ds_source[sp_src]['grid_area_rad2'].values
+                            elif 'area' in list( self.ds_source[sp_src].variables ):
+                                self.dim_var['grid_area_rad2'] = self.ds_source[sp_src]['area'].values
+                                if 'units' in self.ds_source[sp_src]['area'].attrs:
+                                    if self.ds_source[sp_src]['area'].units != 'radians^2':
+                                        if not self.ignore_warning:
+                                            print( 'Warning: Check units in area, it should be "radians^2"' )
+                                else:
+                                    if not self.ignore_warning:
+                                        print( 'Warning: Unit attribute is not availabe for area, it is assumed to be radians^2' )
+                            else:
+                                raise ValueError( 'Grid area variable is not available!' )
+                                
                         elif 'lat' in list( self.ds_source[sp_src].dims ):
                             self.grid_type = 'FV'
                             self.dim_var['lat'] = self.ds_source[sp_src]['lat'].values
