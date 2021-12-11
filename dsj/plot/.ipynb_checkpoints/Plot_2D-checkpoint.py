@@ -8,31 +8,35 @@ MODIFICATION HISTORY:
     Duseong Jo, 19, JAN, 2021: VERSION 1.00
     - Initial version
     Duseong Jo, 20, JAN, 2021: VERSION 1.10
-    - Added a unit option
+    - Add a unit option
     Duseong Jo, 22, JAN, 2021: VERSION 1.11
     - Possible minor bug fix
     Duseong Jo, 25, JAN, 2021: VERSION 1.20
-    - set edgecolor none for polycollection method
+    - Set edgecolor none for polycollection method
     Duseong Jo, 05, FEB, 2021: VERSION 1.21
-    - minor bug fix for lon/lat input values check
+    - Minor bug fix for lon/lat input values check
     Duseong Jo, 06, FEB, 2021: VERSION 1.22
-    - minor bug fix for custom colorlabels
+    - Minor bug fix for custom colorlabels
     Duseong Jo, 09, FEB, 2021: VERSION 1.30
-    - Added a log scale option
+    - Add a log scale option
     Duseong Jo, 12, FEB, 2021: VERSION 1.40
-    - Added a symlog functionality for minus values in log plot
+    - Add a symlog functionality for minus values in log plot
     Duseong Jo, 13, FEB, 2021: VERSION 1.50
-    - Added a diff option for difference plot
+    - Add a diff option for difference plot
     Duseong Jo, 24, JEB, 2021: VERSION 1.60
-    - minor bug fix for log plot with maximum values less than 0.1
+    - Minor bug fix for log plot with maximum values less than 0.1
     Duseong Jo, 31, MAY, 2021: VERSION 1.61
-    - minor bug fix when colorbar is False
+    - Minor bug fix when colorbar is False
     Duseong Jo, 07, OCT, 2021: VERSION 1.70
     - Now can deal with regional output files
     Duseong Jo, 27, OCT, 2021: VERSION 1.71
     - Get colorticks even if colorbar=False
     Duseong Jo, 02, NOV, 2021: VERSION 1.72
-    - minor bug fix for a log scale color labels
+    - Minor bug fix for a log scale color labels
+    Duseong Jo, 09, DEC, 2021: VERSION 1.80
+    - New capability for shifting center longitude in the plot
+    Duseong Jo, 10, DEC, 2021: VERSION 1.85
+    - Add more options to deal with lon/lat lines
 '''
 
 ### Should be changed for sharing with people
@@ -49,6 +53,7 @@ import cartopy.feature as cfeature
 import matplotlib.cm as cm
 from dsj.plot.cbar import Cbar
 from cartopy.mpl.ticker import LongitudeFormatter, LatitudeFormatter
+from cartopy.mpl.gridliner import LONGITUDE_FORMATTER, LATITUDE_FORMATTER
 from matplotlib.collections import PolyCollection
 import matplotlib
 from matplotlib import ticker
@@ -71,6 +76,7 @@ class Plot_2D(object):
            ax: Parent axes from which space for the plot will be drawn
            cmap: colormap for plot
            projection: map projection by cartopy.crs
+           center_180: if True, center of the plot will be 180 instead of 0 degree
            grid_line: plot grid lines?
            grid_line_lw: linewidth for grid line
            coast: draw coastlines
@@ -79,9 +85,12 @@ class Plot_2D(object):
            resolution: resolution of coast/country/state lines (10m, 50m, or 110m)
            feature_line_lw: linewidth for coast/country/state lines
            feature_color: color for coast/country/state lines
-           lonlat_line: draw longitue & latitude lines?
+           lonlat_info: show longitude & latitude lines/labels?
+           lonlat_line: show/hide longitude & latitude lines?
            lon_interval: longitude lines interval
            lat_interval: latitude lines interval
+           lon_labels: for custom longitude labels [list]
+           lat_labels: for custom latitude labels [list]
            font_family: font family being used for the plot
            label_size: label size for the plot (longitude & latitude)
            colorbar: add colorbar?
@@ -114,10 +123,11 @@ class Plot_2D(object):
     '''
     
     def __init__(self, var, lons=None, lats=None, lon_range=[-180,180], lat_range=[-90,90],
-                 scrip_file="", ax=None, cmap=None, projection=ccrs.PlateCarree(), 
+                 scrip_file="", ax=None, cmap=None, projection=ccrs.PlateCarree(), center_180=False, 
                  grid_line=False, grid_line_lw=1, coast=True, country=True, state=False, 
                  resolution="10m", feature_line_lw=0.5, feature_color="black",
-                 lonlat_line=True, lon_interval=None, lat_interval=None,
+                 lonlat_info=True, lonlat_line=True, lon_interval=None, lat_interval=None,
+                 lon_labels=None, lat_labels=None,
                  font_family="STIXGeneral", label_size=15, colorbar=True, 
                  log_scale=False, log_scale_min=None, diff=False, orientation="horizontal", 
                  shrink=0.8, pad=0.12, fraction=0.1, extend='both',
@@ -172,6 +182,11 @@ class Plot_2D(object):
             raise ValueError( 'Check lon_range!' + '\n' + \
                               'Current Values:', lon_range)
         else:
+            if (lon_range==[-180,180]) & (lat_range==[-90,90]):
+                self.regional = False
+            else:
+                self.regional = True
+            
             self.lon_range = lon_range
         
         # lat_range dimension check
@@ -180,7 +195,20 @@ class Plot_2D(object):
                               'Current Values:', lat_range)
         else:
             self.lat_range = lat_range
+
+        # To shift map by 180 degree in x-axis
+        if center_180:
+            if projection==ccrs.PlateCarree():
+                projection = ccrs.PlateCarree(central_longitude=180)
+            else:
+                if projection.proj4_params['lon_0'] != 180:
+                    raise ValueError( 'central_longitude must be set to 180 if center_180 is True' )
             
+            if self.lon_range[1] < self.lon_range[0]:
+                self.lon_range[0] -= 180
+                self.lon_range[1] += 180
+
+                    
         # Read scrip file in case of SE model output
         if self.model_type == 'SE':
             if type(scrip_file) == xr.core.dataset.Dataset:
@@ -200,6 +228,7 @@ class Plot_2D(object):
             self.corner_lat = np.copy( ds_scrip.grid_corner_lat.values )
             self.center_lon = np.copy( ds_scrip.grid_center_lon.values )
             self.center_lat = np.copy( ds_scrip.grid_center_lat.values )
+
             
         # Color map check
         if cmap == None:
@@ -228,11 +257,13 @@ class Plot_2D(object):
                 self.nticks = 5
         else:
             self.nticks = nticks
+            
         
         # Pass input keywords
         self.scrip_file = scrip_file
         self.font_family = font_family
         self.projection = projection
+        self.center_180 = center_180
         self.verbose = verbose
         self.grid_line = grid_line
         self.grid_line_lw = grid_line_lw
@@ -243,9 +274,12 @@ class Plot_2D(object):
         self.resolution = resolution
         self.feature_line_lw = feature_line_lw
         self.feature_color = feature_color
+        self.lonlat_info = lonlat_info
         self.lonlat_line = lonlat_line
         self.lon_interval = lon_interval
         self.lat_interval = lat_interval
+        self.lon_labels = lon_labels
+        self.lat_labels = lat_labels
         self.colorbar = colorbar
         self.log_scale = log_scale
         self.log_scale_min = log_scale_min
@@ -278,17 +312,19 @@ class Plot_2D(object):
         # shift longitude values by 180 degree
         if self.model_type == 'FV': # 2D FV model output
             if ( (np.min(self.lon_range) < 0) & (np.max(self.lon) > 180) ):
-                self.lon[self.lon > 180.] -= 360.
-                if verbose:
-                    print( "FV model: Shift longitude values by 180 degree" )
+                if not self.center_180:
+                    self.lon[self.lon > 180.] -= 360.
+                    if verbose:
+                        print( "FV model: Shift longitude values by 180 degree" )
         else: # 1D SE model output
             if ( (np.min(self.lon_range) < 0) & (np.max(self.corner_lon) > 180) ):
-                self.corner_lon[self.corner_lon > 180.] -= 360.
-                if verbose:
-                    print( "SE model: Shift longitude values by 180 degree" )
+                if not self.center_180:
+                    self.corner_lon[self.corner_lon > 180.] -= 360.
+                    if verbose:
+                        print( "SE model: Shift longitude values by 180 degree" )
 
         # automatically set longitude and latitude intervals        
-        if self.lonlat_line:
+        if self.lonlat_info:
             if self.lon_interval == None:
                 lon_length = lon_range[1] - lon_range[0]
                 self.lon_interval = np.around( lon_length / 6. )
@@ -302,12 +338,15 @@ class Plot_2D(object):
 
         # set vertices for SE model output
         if self.model_type == 'SE':
+            
             self.lons_corners = np.copy( self.corner_lon.reshape( self.corner_lon.shape[0],
                                                                   self.corner_lon.shape[1],1) )
             self.lats_corners = np.copy( self.corner_lat.reshape( self.corner_lat.shape[0],
                                                                   self.corner_lat.shape[1],1) )
-            self.lons_corners[ self.lons_corners > 180. ] -= 360
-            self.center_lon[ self.center_lon > 180. ] -= 360
+
+            if not self.center_180:
+                self.lons_corners[ self.lons_corners > 180. ] -= 360
+                self.center_lon[ self.center_lon > 180. ] -= 360
             
             self.lons_corners_add = []
             self.lats_corners_add = []
@@ -316,40 +355,101 @@ class Plot_2D(object):
             for i, cenlon in enumerate( self.center_lon ):
                 lon_maxmin = np.max( self.lons_corners[i,:,:] ) - \
                              np.min( self.lons_corners[i,:,:] )
-                if ( lon_maxmin > 180 ):
-                    if np.mean( self.lons_corners[i,:,:] ) <= 0:  
-                        inds2 = np.where( self.lons_corners[i,:,:] < 0)[0]
-                        tmp_lons_corners = np.copy( self.lons_corners[i,:] )
-                        tmp_lons_corners[inds2] = 180.
-                        self.lons_corners_add.append( tmp_lons_corners )
-                        self.lats_corners_add.append( self.lats_corners[i,:] )
+                if self.center_180:
+                    if ( lon_maxmin > 180 ):
+                        if np.mean( self.lons_corners[i,:,:] ) <= 180:  
+                            inds2 = np.where( self.lons_corners[i,:,:] < 180)[0]
+                            tmp_lons_corners = np.copy( self.lons_corners[i,:] )
+                            tmp_lons_corners[inds2] = 360.
+                            self.lons_corners_add.append( tmp_lons_corners )
+                            self.lats_corners_add.append( self.lats_corners[i,:] )
 
-                        inds = np.where( self.lons_corners[i,:,:] > 0 )[0]
-                        self.lons_corners[i,inds] = -180.
-                        
-                        self.var_add.append( self.var[i] )
-            
-                    elif np.mean( self.lons_corners[i,:,:] ) > 0:
-                        inds2 = np.where( self.lons_corners[i,:,:] > 0)[0]
-                        tmp_lons_corners = np.copy( self.lons_corners[i,:] )
-                        tmp_lons_corners[inds2] = -180.
-                        self.lons_corners_add.append( tmp_lons_corners )
-                        self.lats_corners_add.append( self.lats_corners[i,:] )                     
-                        
-                        inds = np.where( self.lons_corners[i,:,:] < 0 )[0]
-                        self.lons_corners[i,inds] = 180.
-            
-                        self.var_add.append( self.var[i] )
-            
+                            inds = np.where( self.lons_corners[i,:,:] > 180 )[0]
+                            self.lons_corners[i,inds] = 0.
+
+                            self.var_add.append( self.var[i] )
+
+                        elif np.mean( self.lons_corners[i,:,:] ) > 180:
+                            inds2 = np.where( self.lons_corners[i,:,:] > 180)[0]
+                            tmp_lons_corners = np.copy( self.lons_corners[i,:] )
+                            tmp_lons_corners[inds2] = 0
+                            self.lons_corners_add.append( tmp_lons_corners )
+                            self.lats_corners_add.append( self.lats_corners[i,:] )                     
+
+                            inds = np.where( self.lons_corners[i,:,:] > 180 )[0]
+                            self.lons_corners[i,inds] = 360.
+
+                            self.var_add.append( self.var[i] )
+                            
+                else:
+                    if ( lon_maxmin > 180 ):
+                        if np.mean( self.lons_corners[i,:,:] ) <= 0:  
+                            inds2 = np.where( self.lons_corners[i,:,:] < 0)[0]
+                            tmp_lons_corners = np.copy( self.lons_corners[i,:] )
+                            tmp_lons_corners[inds2] = 180.
+                            self.lons_corners_add.append( tmp_lons_corners )
+                            self.lats_corners_add.append( self.lats_corners[i,:] )
+
+                            inds = np.where( self.lons_corners[i,:,:] > 0 )[0]
+                            self.lons_corners[i,inds] = -180.
+
+                            self.var_add.append( self.var[i] )
+
+                        elif np.mean( self.lons_corners[i,:,:] ) > 0:
+                            inds2 = np.where( self.lons_corners[i,:,:] > 0)[0]
+                            tmp_lons_corners = np.copy( self.lons_corners[i,:] )
+                            tmp_lons_corners[inds2] = -180.
+                            self.lons_corners_add.append( tmp_lons_corners )
+                            self.lats_corners_add.append( self.lats_corners[i,:] )                     
+
+                            inds = np.where( self.lons_corners[i,:,:] < 0 )[0]
+                            self.lons_corners[i,inds] = 180.
+
+                            self.var_add.append( self.var[i] )
+                            
+                            
+            self.lons_corners_add = np.array(self.lons_corners_add)        
+            self.lats_corners_add = np.array(self.lats_corners_add)
+                            
+            if self.center_180:
+                self.lons_corners[ self.lons_corners > 180. ] -= 360
+                self.lons_corners_add[ self.lons_corners_add > 180. ] -= 360
+                self.center_lon[ self.center_lon > 180. ] -= 360
+                
+                for lc1 in np.arange(len(self.lons_corners[:,0,0])):
+                    for lc2 in np.arange(len(self.lons_corners[0,:,0])):
+                        for lc3 in np.arange(len(self.lons_corners[0,0,:])):
+                            if self.lons_corners[lc1,lc2,lc3] >= 0:
+                                self.lons_corners[lc1,lc2,lc3] -= 180
+                            elif self.lons_corners[lc1,lc2,lc3] < 0:
+                                self.lons_corners[lc1,lc2,lc3] += 180
+                                
+                for lc1 in np.arange(len(self.lons_corners_add[:,0,0])):
+                    for lc2 in np.arange(len(self.lons_corners_add[0,:,0])):
+                        for lc3 in np.arange(len(self.lons_corners_add[0,0,:])):
+                            if self.lons_corners_add[lc1,lc2,lc3] >= 0:
+                                self.lons_corners_add[lc1,lc2,lc3] -= 180
+                            elif self.lons_corners_add[lc1,lc2,lc3] < 0:
+                                self.lons_corners_add[lc1,lc2,lc3] += 180
+                
+                for lc1 in np.arange(len(self.center_lon)):
+                    if self.center_lon[lc1] >= 0:
+                        self.center_lon[lc1] -= 180
+                    elif self.center_lon[lc1] < 0:
+                        self.center_lon[lc1] += 180
+                
+                
+
             if self.lons_corners_add != []:
                 self.lons_corners = np.concatenate( (self.lons_corners, 
-                                                     np.array(self.lons_corners_add)), axis=0 )
+                                                     self.lons_corners_add), axis=0 )
                 self.lats_corners = np.concatenate( (self.lats_corners, 
-                                                     np.array(self.lats_corners_add)), axis=0 )
-            
+                                                     self.lats_corners_add), axis=0 )
+                
             self.var = np.concatenate( (self.var, np.array(self.var_add)), axis=0 )
-            
             self.verts = np.concatenate( ( self.lons_corners, self.lats_corners ), axis=2)
+            
+                
             
             
         # set plot color properties (FV model output)
@@ -727,6 +827,10 @@ class Plot_2D(object):
         
         # === FV model output (2D with longitude and latitude values) ===
         if self.model_type == 'FV':
+            if self.center_180:
+                self.lon += 180
+                self.lon[ self.lon > 180. ] -= 360
+
             self.im = self.ax.pcolormesh(self.lon, self.lat, self.var, 
                                          cmap=self.cmap, transform=self.projection, 
                                          vmin=self.cmin, vmax=self.cmax,
@@ -751,11 +855,26 @@ class Plot_2D(object):
         if self.state:
             self.ax.add_feature(cfeature.STATES.with_scale(self.resolution), 
                                 lw=self.feature_line_lw, edgecolor=self.feature_color )
-        if self.lonlat_line:
-            self.lonticklabel = np.arange(self.lon_range[0],self.lon_range[1]+0.1,
-                                          self.lon_interval)
-            self.latticklabel = np.arange(self.lat_range[0],self.lat_range[1]+0.1,
-                                          self.lat_interval)
+        if self.lonlat_info:
+            if self.lon_labels==None:
+                self.lonticklabel = np.arange(self.lon_range[0],self.lon_range[1]+0.1,
+                                              self.lon_interval)
+            else:
+                if self.lon_labels[0] > self.lon_labels[-1]:
+                    self.lonticklabel = np.copy( self.lon_labels )
+                    if self.center_180:
+                        self.lonticklabel += 180
+                        self.lonticklabel[ self.lonticklabel > 180. ] -= 360    
+
+                else:
+                    self.lonticklabel = self.lon_labels
+            
+            if self.lat_labels==None:
+                self.latticklabel = np.arange(self.lat_range[0],self.lat_range[1]+0.1,
+                                              self.lat_interval)
+            else:
+                self.latticklabel = self.lat_labels
+
 
             self.ax.set_xticks(self.lonticklabel,crs=self.ax.projection)
             self.ax.set_yticks(self.latticklabel,crs=self.ax.projection)
@@ -766,7 +885,31 @@ class Plot_2D(object):
             self.lat_formatter = LatitudeFormatter()
             self.ax.xaxis.set_major_formatter(self.lon_formatter)
             self.ax.yaxis.set_major_formatter(self.lat_formatter)
-            self.ax.grid( lw=1.0, color='black', alpha=0.5, linestyle=':')
+
+            
+            if self.regional:
+                # if self.center_180:
+                #     self.lonticklabel += 180
+                #     self.lonticklabel[ self.lonticklabel > 180. ] -= 360    
+                # self.gl2 = self.ax.gridlines( lw=1.0, color='black', alpha=0.5, linestyle=':' )
+
+                # if self.center_180:
+                #     self.lonticklabel += 180
+                #     self.lonticklabel[ self.lonticklabel > 180. ] -= 360    
+                #self.gl = self.ax.gridlines( lw=1.0, color='black', alpha=0.5, linestyle=':' )
+                #self.gl.xlocator = ticker.FixedLocator( self.lonticklabel )                
+                
+                if self.lonlat_line:
+                    for lontick in self.lonticklabel:
+                        self.ax.plot( [lontick, lontick], self.ax.get_ylim(), 
+                                      lw=1.0, linestyle=':', color='black', alpha=0.5 )
+                    for lattick in self.latticklabel:
+                        self.ax.plot( self.ax.get_xlim(), [lattick, lattick],
+                                      lw=1.0, linestyle=':', color='black', alpha=0.5 )
+            
+            else:
+                if self.lonlat_line:
+                    self.ax.grid( lw=1.0, color='black', alpha=0.5, linestyle=':')
   
         # === Set colorbar properties ===
         if self.colorbar:
