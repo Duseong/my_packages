@@ -7,6 +7,8 @@ this code is designed for supplying some code for post-processing of SE(-RR) out
 MODIFICATION HISTORY:
     Duseong Jo, 19, AUG, 2021: VERSION 1.00
     - Initial version
+    Duseong Jo, 11, FEB, 2022: VERSION 1.10
+    - Add a flexibility for the number of candidate grids
 '''
 
 ### Module import ###
@@ -58,7 +60,7 @@ def get_scrip_slice( lon_region, lat_region, scrip_file='' ):
 
 
 
-def get_site_index( site_lon, site_lat, scrip_file='' ):
+def get_site_index( site_lon, site_lat, scrip_file='', check_N=50 ):
     '''
     NAME:
            get_site_index
@@ -70,6 +72,7 @@ def get_site_index( site_lon, site_lat, scrip_file='' ):
            site_lon: site longitude in degrees
            site_lat: site latitude in degrees
            scrip_file: scrip filename for grid information
+           check_N: number of center points to be picked up for the nearest grid candidates
     '''
     
     if type(scrip_file) == xr.core.dataset.Dataset:
@@ -83,7 +86,7 @@ def get_site_index( site_lon, site_lat, scrip_file='' ):
 
         
     candidates = ( np.abs( site_lat - ds_scrip['grid_center_lat'].values ) + \
-                   np.abs( site_lon - ds_scrip['grid_center_lon'].values ) ).argsort()[0:10]
+                   np.abs( site_lon - ds_scrip['grid_center_lon'].values ) ).argsort()[0:check_N]
     
     for index_c in candidates:
         for jj in np.arange( len(ds_scrip.grid_corners) ):
